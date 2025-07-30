@@ -46,6 +46,17 @@ export const useSettingsStore = defineStore('settings', () => {
   // 搜索助手模型计算属性
   const searchAssistantModel = computed(() => searchAssistantModelRef.value)
 
+  // Context compression settings
+  const contextCompressionSettings = ref<{
+    pineconeEnv?: string
+    ollamaModel?: string
+  }>({})
+
+  // Check if context compression is properly configured
+  const isCompressionConfigured = computed(() => {
+    return !!(contextCompressionSettings.value.pineconeEnv && contextCompressionSettings.value.ollamaModel)
+  })
+
   // 模型匹配字符串数组，按优先级排序
   const searchAssistantModelPriorities = [
     'gpt-3.5',
@@ -244,6 +255,18 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  // Load context compression settings from main process
+  const loadContextCompressionSettings = async () => {
+    try {
+      const settings = await window.api.getContextCompressionSettings()
+      if (settings) {
+        contextCompressionSettings.value = settings
+      }
+    } catch (error) {
+      console.error('Failed to load context compression settings:', error)
+    }
+  }
+
   const saveProviderTimestamps = async () => {
     try {
       await configP.setSetting('providerTimestamps', providerTimestamps.value)
@@ -360,6 +383,8 @@ export const useSettingsStore = defineStore('settings', () => {
       }
       // 初始化搜索助手模型
       await initOrUpdateSearchAssistantModel()
+      // 加载上下文压缩设置
+      await loadContextCompressionSettings()
       // 设置事件监听
       setupProviderListener()
     } catch (error) {
@@ -1539,6 +1564,10 @@ export const useSettingsStore = defineStore('settings', () => {
     setupProviderListener,
     getModelConfig,
     setModelConfig,
-    resetModelConfig
+    resetModelConfig,
+    // Context compression
+    contextCompressionSettings,
+    isCompressionConfigured,
+    loadContextCompressionSettings
   }
 })

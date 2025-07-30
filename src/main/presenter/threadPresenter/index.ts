@@ -36,6 +36,7 @@ import { getFileContext } from './fileContext'
 import { ContentEnricher } from './contentEnricher'
 import { CONVERSATION_EVENTS, STREAM_EVENTS, TAB_EVENTS } from '@/events'
 import { DEFAULT_SETTINGS } from './const'
+import { ContextCompressionService } from '../../services/ContextCompressionService'
 
 interface GeneratingMessageState {
   message: AssistantMessage
@@ -62,6 +63,7 @@ export class ThreadPresenter implements IThreadPresenter {
   private llmProviderPresenter: ILlmProviderPresenter
   private configPresenter: IConfigPresenter
   private searchManager: SearchManager
+  private contextCompressionService: ContextCompressionService
   private generatingMessages: Map<string, GeneratingMessageState> = new Map()
   public searchAssistantModel: MODEL_META | null = null
   public searchAssistantProviderId: string | null = null
@@ -79,6 +81,7 @@ export class ThreadPresenter implements IThreadPresenter {
     this.llmProviderPresenter = llmProviderPresenter
     this.searchManager = new SearchManager()
     this.configPresenter = configPresenter
+    this.contextCompressionService = new ContextCompressionService()
 
     // 监听Tab关闭事件，清理绑定关系
     eventBus.on(TAB_EVENTS.CLOSED, (tabId: number) => {
@@ -791,6 +794,24 @@ export class ThreadPresenter implements IThreadPresenter {
       if (activeId === conversationId) {
         this.activeConversationIds.delete(tabId)
       }
+    }
+
+    // Notify context compression service to clean up vector data
+    try {
+      console.log(`Notifying context compression service to delete vectors for conversation: ${conversationId}`)
+      const success = await this.contextCompressionService.deleteConversationVectors(conversationId)
+
+      if (success) {
+        console.log(`Successfully deleted context vectors for conversation: ${conversationId}`)
+      } else {
+        console.warn(`Failed to delete context vectors for conversation: ${conversationId}`)
+      }
+    } catch (error) {
+      console.error('Error occurred while deleting conversation vectors:', {
+        error: error instanceof Error ? error.message : String(error),
+        conversationId
+      })
+      // Don't throw the error - vector cleanup failure shouldn't prevent conversation deletion
     }
 
     await this.broadcastThreadListUpdate() // 必须广播
@@ -1822,7 +1843,8 @@ export class ThreadPresenter implements IThreadPresenter {
     const remainingContextLength = contextLength - reservedTokens
 
     // 选择合适的上下文消息
-    const selectedContextMessages = this.selectContextMessages(
+    const selectedContextMessages = await this.selectContextMessages(
+      conversation,
       contextMessages,
       userMessage,
       remainingContextLength
@@ -1861,14 +1883,47 @@ export class ThreadPresenter implements IThreadPresenter {
   }
 
   // 选择上下文消息
-  private selectContextMessages(
+  private async selectContextMessages(
+    conversation: CONVERSATION,
     contextMessages: Message[],
     userMessage: Message,
     remainingContextLength: number
-  ): Message[] {
+  ): Promise<Message[]> {
     if (remainingContextLength <= 0) {
       return []
     }
+
+    // Check if context compression is enabled for this model
+    const { providerId, modelId } = conversation.settings
+    const modelConfig = this.configPresenter.getModelConfig(modelId, providerId)
+
+    if (modelConfig?.contextCompressionEnabled) {
+      console.log(`Using context compression strategy for conversation ${conversation.id}`)
+
+      try {
+        const compressedMessages = await this.contextCompressionService.processContext(
+          conversation,
+          contextMessages,
+          userMessage,
+          remainingContextLength
+        )
+
+        // Log the strategy usage for monitoring
+        this.contextCompressionService.logStrategyUsage(
+          conversation.id,
+          'compression',
+          compressedMessages.length,
+          remainingContextLength
+        )
+
+        return compressedMessages
+      } catch (error) {
+        console.error('Context compression failed, falling back to truncation:', error)
+        // Fall through to default truncation logic
+      }
+    }
+
+    console.log(`Using default truncation strategy for conversation ${conversation.id}`)
 
     const messages = contextMessages.filter((msg) => msg.id !== userMessage?.id).reverse()
 
@@ -1909,6 +1964,15 @@ export class ThreadPresenter implements IThreadPresenter {
     while (selectedMessages.length > 0 && selectedMessages[0].role !== 'user') {
       selectedMessages.shift()
     }
+
+    // Log the strategy usage for monitoring
+    this.contextCompressionService.logStrategyUsage(
+      conversation.id,
+      'truncation',
+      selectedMessages.length,
+      currentLength
+    )
+
     return selectedMessages
   }
 

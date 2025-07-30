@@ -133,6 +133,23 @@
             <Switch v-model:checked="config.reasoning" />
           </div>
 
+          <!-- 上下文压缩 -->
+          <div class="flex items-center justify-between">
+            <div class="space-y-0.5">
+              <Label>{{ t('settings.model.modelConfig.contextCompression.label') }}</Label>
+              <p class="text-xs text-muted-foreground">
+                {{ t('settings.model.modelConfig.contextCompression.description') }}
+              </p>
+              <p v-if="!settingsStore.isCompressionConfigured" class="text-xs text-orange-600">
+                {{ t('settings.model.modelConfig.contextCompression.configureFirst') }}
+              </p>
+            </div>
+            <Switch
+              v-model:checked="config.contextCompressionEnabled"
+              :disabled="!settingsStore.isCompressionConfigured"
+            />
+          </div>
+
           <!-- 思考预算 (仅对支持的 Gemini 模型显示) -->
           <div v-if="showThinkingBudget" class="space-y-4">
             <div class="flex items-center justify-between">
@@ -282,7 +299,8 @@ const config = ref<ModelConfig>({
   vision: false,
   functionCall: false,
   reasoning: false,
-  type: ModelType.Chat
+  type: ModelType.Chat,
+  contextCompressionEnabled: false
 })
 
 // 重置确认对话框
@@ -308,7 +326,8 @@ const loadConfig = async () => {
       vision: false,
       functionCall: false,
       reasoning: false,
-      type: ModelType.Chat
+      type: ModelType.Chat,
+      contextCompressionEnabled: false
     }
 
     config.value = defaultConfig

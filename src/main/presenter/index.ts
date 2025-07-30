@@ -23,6 +23,7 @@ import { OAuthPresenter } from './oauthPresenter'
 import { FloatingButtonPresenter } from './floatingButtonPresenter'
 import { CONFIG_EVENTS, WINDOW_EVENTS } from '@/events'
 import { KnowledgePresenter } from './knowledgePresenter'
+import { ContextCompressionPresenter } from './contextCompressionPresenter'
 
 // IPC调用上下文接口
 interface IPCCallContext {
@@ -57,6 +58,7 @@ export class Presenter implements IPresenter {
   oauthPresenter: OAuthPresenter
   floatingButtonPresenter: FloatingButtonPresenter
   knowledgePresenter: KnowledgePresenter
+  contextCompressionPresenter: ContextCompressionPresenter
   // llamaCppPresenter: LlamaCppPresenter // 保留原始注释
   dialogPresenter: DialogPresenter
 
@@ -88,6 +90,10 @@ export class Presenter implements IPresenter {
     this.floatingButtonPresenter = new FloatingButtonPresenter(this.configPresenter)
     this.dialogPresenter = new DialogPresenter()
     this.knowledgePresenter = new KnowledgePresenter(this.configPresenter, dbDir)
+    this.contextCompressionPresenter = new ContextCompressionPresenter()
+
+    // Register IPC handlers for context compression
+    this.contextCompressionPresenter.register()
 
     // this.llamaCppPresenter = new LlamaCppPresenter() // 保留原始注释
     this.setupEventBus() // 设置事件总线监听

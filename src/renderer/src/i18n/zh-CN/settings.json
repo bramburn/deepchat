@@ -120,6 +120,11 @@
         "label": "视觉能力",
         "description": "模型是否支持视觉能力"
       },
+      "contextCompression": {
+        "label": "上下文压缩",
+        "description": "使用Pinecone向量存储启用长期记忆",
+        "configureFirst": "请先在全局设置中配置上下文压缩"
+      },
       "functionCall": {
         "label": "函数调用",
         "description": "模型是否原生支持函数调用(关闭这个选项后DeepChat会自动模拟函数调用)"
@@ -572,5 +577,28 @@
     "previousTab": "切换到上一个标签页",
     "specificTab": "切换到指定标签页 (1-8)",
     "lastTab": "切换到最后一个标签页"
+  },
+  "contextCompression": {
+    "title": "上下文压缩",
+    "description": "通过将聊天历史嵌入并存储在Pinecone向量数据库中来启用长期记忆。需要运行带有兼容嵌入模型的Ollama实例。",
+    "pineconeApiKey": "Pinecone API密钥",
+    "pineconeApiKeyPlaceholder": "输入您的Pinecone API密钥",
+    "pineconeEnvironment": "Pinecone环境",
+    "pineconeEnvironmentPlaceholder": "例如：us-west1-gcp",
+    "ollamaModel": "Ollama嵌入模型",
+    "ollamaModelPlaceholder": "例如：nomic-embed-text",
+    "ollamaModelHint": "确保此模型在您的本地Ollama实例中可用",
+    "helpTitle": "设置说明",
+    "helpPinecone": "从您的Pinecone控制台获取API密钥和环境",
+    "helpOllama": "确保Ollama在本地运行并安装了嵌入模型",
+    "helpModel": "推荐模型：nomic-embed-text（运行'ollama pull nomic-embed-text'）",
+    "validating": "正在验证并保存设置...",
+    "saveSuccess": "设置已成功保存并验证！",
+    "saveError": "保存设置失败。请检查您的配置。",
+    "errors": {
+      "pineconeApiKeyRequired": "Pinecone API密钥是必需的",
+      "pineconeEnvironmentRequired": "Pinecone环境是必需的",
+      "ollamaModelRequired": "Ollama模型是必需的"
+    }
   }
 }

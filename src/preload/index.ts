@@ -30,6 +30,17 @@ const api = {
     }
     cachedWebContentsId = ipcRenderer.sendSync('get-web-contents-id')
     return cachedWebContentsId
+  },
+  // Context Compression APIs
+  getContextCompressionSettings: () => {
+    return ipcRenderer.invoke('get-context-compression-settings')
+  },
+  saveContextCompressionSettings: (settings: any) => {
+    return ipcRenderer.invoke('save-context-compression-settings', settings)
+  },
+  // Thread Deletion Notification
+  notifyThreadDeleted: (threadId: string) => {
+    return ipcRenderer.send('thread-deleted', threadId)
   }
 }
 exposeElectronAPI()

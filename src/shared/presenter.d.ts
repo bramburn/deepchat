@@ -128,6 +128,8 @@ export interface ModelConfig {
   // Whether this config is user-defined (true) or default config (false)
   isUserDefined?: boolean
   thinkingBudget?: number
+  // Whether context compression is enabled for this model
+  contextCompressionEnabled?: boolean
 }
 
 export interface IModelConfig {

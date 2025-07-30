@@ -185,6 +185,11 @@
       "vision": {
         "description": "Does the model support visual ability?",
         "label": "Visual ability"
+      },
+      "contextCompression": {
+        "label": "Context Compression",
+        "description": "Enable long-term memory using Pinecone vector storage",
+        "configureFirst": "Configure Context Compression in global settings first"
       }
     }
   },
@@ -572,5 +577,28 @@
     "previousTab": "Switch to previous tab",
     "specificTab": "Switch to specific tab (1-8)",
     "lastTab": "Switch to last tab"
+  },
+  "contextCompression": {
+    "title": "Context Compression",
+    "description": "Enable long-term memory by embedding and storing chat history in a Pinecone vector database. Requires a running Ollama instance with a compatible embedding model.",
+    "pineconeApiKey": "Pinecone API Key",
+    "pineconeApiKeyPlaceholder": "Enter your Pinecone API key",
+    "pineconeEnvironment": "Pinecone Environment",
+    "pineconeEnvironmentPlaceholder": "e.g., us-west1-gcp",
+    "ollamaModel": "Ollama Embedding Model",
+    "ollamaModelPlaceholder": "e.g., nomic-embed-text",
+    "ollamaModelHint": "Make sure this model is available in your local Ollama instance",
+    "helpTitle": "Setup Instructions",
+    "helpPinecone": "Get your Pinecone API key and environment from your Pinecone dashboard",
+    "helpOllama": "Ensure Ollama is running locally with the embedding model installed",
+    "helpModel": "Recommended model: nomic-embed-text (run 'ollama pull nomic-embed-text')",
+    "validating": "Validating and saving settings...",
+    "saveSuccess": "Settings saved and validated successfully!",
+    "saveError": "Failed to save settings. Please check your configuration.",
+    "errors": {
+      "pineconeApiKeyRequired": "Pinecone API key is required",
+      "pineconeEnvironmentRequired": "Pinecone environment is required",
+      "ollamaModelRequired": "Ollama model is required"
+    }
   }
 }

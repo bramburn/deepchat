@@ -115,6 +115,15 @@ const router = createRouter({
             titleKey: 'routes.settings-about',
             icon: 'lucide:info'
           }
+        },
+        {
+          path: 'context-compression',
+          name: 'settings-context-compression',
+          component: () => import('@/components/settings/ContextCompressionSettings.vue'),
+          meta: {
+            titleKey: 'routes.settings-context-compression',
+            icon: 'lucide:database'
+          }
         }
       ]
     }
