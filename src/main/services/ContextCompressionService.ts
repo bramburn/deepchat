@@ -1,6 +1,7 @@
 import { Message } from '@shared/chat'
 import { CONVERSATION } from '@shared/presenter'
 import { createSemanticChunks, extractTextFromMessage, estimateTokenCount } from '../utils/textSplitter'
+import { countMessageTokens, countSingleMessageTokens } from '../utils/tokenizer'
 import { OllamaService } from './OllamaService'
 import { PineconeService } from './PineconeService'
 // Remove the Vector import as it's not exported in the current version
@@ -15,6 +16,17 @@ interface EmbeddedChunk {
   sourceMessageId: string
   chunkIndex: number
   tokenCount: number
+}
+
+/**
+ * Simple message interface for context combination
+ * Used in Sprint 6.1 for combining retrieved and recent context
+ */
+export interface SimpleMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: string | number
 }
 
 /**
@@ -100,11 +112,11 @@ export class ContextCompressionService {
       // Step 2: Generate query embedding for the current user message
       const userMessageText = extractTextFromMessage(userMessage)
       if (userMessageText) {
-        const queryEmbedding = await this.ollamaService.generateEmbedding(userMessageText, true)
+        const queryEmbedding = await this.ollamaService.generateEmbedding(userMessageText, 'query')
 
         if (queryEmbedding) {
           // Step 3: Retrieve relevant historical context from Pinecone
-          const relevantContext = await this.retrieveRelevantContext(
+          const relevantContext = await this.retrieveRelevantContextLegacy(
             conversation.id,
             queryEmbedding,
             3 // Get top 3 most relevant chunks
@@ -282,7 +294,7 @@ export class ContextCompressionService {
       console.log(`Created ${chunks.length} chunks from message ${message.id}`)
 
       // Generate embeddings for all chunks in parallel
-      const embeddings = await this.ollamaService.generateEmbeddingsBatch(chunks, false)
+      const embeddings = await this.ollamaService.generateEmbeddingsBatch(chunks, 'document')
 
       // Combine chunks with their embeddings
       const embeddedChunks: EmbeddedChunk[] = []
@@ -365,7 +377,280 @@ export class ContextCompressionService {
   }
 
   /**
-   * Retrieves relevant context from Pinecone based on query embedding
+   * Retrieves relevant context from Pinecone based on the current message content
+   * This is the main method for semantic search in Sprint 5.1
+   *
+   * @param threadId - The thread ID namespace to search in
+   * @param currentMessageContent - The current message text to find similar content for
+   * @returns Promise<ChatVectorMetadata[]> - Array of relevant context metadata
+   */
+  public async retrieveRelevantContext(
+    threadId: string,
+    currentMessageContent: string
+  ): Promise<ChatVectorMetadata[]> {
+    console.log(`Starting relevant context retrieval for thread ${threadId}`)
+
+    // Step 1: Generate an embedding for the new user message (as a 'query')
+    const queryEmbedding = await this.ollamaService.generateEmbedding(currentMessageContent, 'query')
+
+    if (!queryEmbedding) {
+      console.log(`Could not generate query embedding for thread ${threadId}. Aborting retrieval.`)
+      return []
+    }
+
+    // Step 2: Use the embedding to query Pinecone for the top N results
+    const topK = 5 // This should be made configurable in the future
+    const retrievedMatches = await this.pineconeService.queryNamespace(threadId, queryEmbedding, topK)
+
+    console.log(`Retrieved ${retrievedMatches.length} context matches from Pinecone for thread ${threadId}`)
+    return retrievedMatches
+  }
+
+  /**
+   * Combines semantically retrieved historical messages with recent messages.
+   * Sprint 6.1: Context Combination Logic
+   *
+   * @param retrievedMatches - Metadata of vectors retrieved from Pinecone
+   * @param recentHistory - The last M messages from the current conversation
+   * @returns A de-duplicated and ordered list of messages for the prompt
+   */
+  public constructPromptContext(
+    retrievedMatches: ChatVectorMetadata[],
+    recentHistory: SimpleMessage[]
+  ): SimpleMessage[] {
+    const finalContext: SimpleMessage[] = []
+    const includedMessageIds = new Set<string>()
+
+    console.log(`Combining ${retrievedMatches.length} retrieved matches with ${recentHistory.length} recent messages`)
+
+    // 1. Add the retrieved historical context first.
+    // Sorting by timestamp ensures they are in chronological order.
+    const sortedRetrieved = retrievedMatches.sort((a, b) =>
+      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    )
+
+    for (const match of sortedRetrieved) {
+      // Avoid adding duplicates if a message is both in recent history and retrieved results
+      if (!includedMessageIds.has(match.sourceMessageId)) {
+        finalContext.push({
+          id: match.sourceMessageId,
+          role: match.role as 'user' | 'assistant',
+          content: match.text,
+          timestamp: match.timestamp
+          // Reconstruct the message object as needed
+        })
+        includedMessageIds.add(match.sourceMessageId)
+      }
+    }
+
+    // 2. Add the recent messages, skipping any that were already included from retrieval.
+    for (const message of recentHistory) {
+      if (!includedMessageIds.has(message.id)) {
+        finalContext.push(message)
+        includedMessageIds.add(message.id)
+      }
+    }
+
+    console.log(`Combined context: ${sortedRetrieved.length} retrieved + ${recentHistory.length} recent = ${finalContext.length} final messages`)
+
+    return finalContext
+  }
+
+  /**
+   * Truncates a list of messages to fit within a specified token limit.
+   * Sprint 6.2: Final Truncation and Prompt Assembly
+   *
+   * Removes messages from the beginning of the array (oldest first) until the total
+   * token count is within the specified limit.
+   *
+   * @param messages - Array of SimpleMessage objects to truncate
+   * @param maxTokens - Maximum number of tokens allowed
+   * @returns A new array of messages that fits within the token limit
+   */
+  public truncatePromptContext(messages: SimpleMessage[], maxTokens: number): SimpleMessage[] {
+    // Create a copy to avoid mutating the original array
+    const messagesCopy = [...messages]
+
+    let currentTokenCount = countMessageTokens(messagesCopy)
+
+    if (currentTokenCount <= maxTokens) {
+      console.log(`Context (${currentTokenCount} tokens) is within limit (${maxTokens} tokens)`)
+      return messagesCopy
+    }
+
+    console.log(`Context exceeds token limit: ${currentTokenCount} > ${maxTokens}. Starting truncation...`)
+
+    while (currentTokenCount > maxTokens && messagesCopy.length > 0) {
+      // Remove the oldest message (from the start of the combined context)
+      const removedMessage = messagesCopy.shift()
+      if (removedMessage) {
+        const removedTokens = countSingleMessageTokens(removedMessage)
+        currentTokenCount -= removedTokens
+        console.log(`Removed message ${removedMessage.id} (${removedTokens} tokens). Remaining: ${currentTokenCount} tokens`)
+      }
+    }
+
+    console.log(`Truncation complete. Final context: ${messagesCopy.length} messages, ${currentTokenCount} tokens`)
+    return messagesCopy
+  }
+
+  /**
+   * Runs background summarization for a batch of messages.
+   * Sprint 7.1: Summarization Service
+   *
+   * This method takes a batch of messages, formats them into a transcript,
+   * and uses an LLM to generate a concise summary for long-term memory.
+   *
+   * @param threadId - The conversation thread ID
+   * @param messagesToSummarize - Array of messages to summarize
+   * @param modelConfig - Model configuration for the LLM call
+   * @returns Promise<string | null> - The generated summary or null on error
+   */
+  public async runSummarization(
+    threadId: string,
+    messagesToSummarize: Message[],
+    modelConfig: any
+  ): Promise<string | null> {
+    console.log(`Starting background summarization for thread ${threadId} with ${messagesToSummarize.length} messages`)
+
+    if (messagesToSummarize.length === 0) {
+      console.log(`No messages to summarize for thread ${threadId}`)
+      return null
+    }
+
+    try {
+      // Format messages into a transcript
+      const transcript = messagesToSummarize
+        .map(msg => `${msg.role}: ${extractTextFromMessage(msg) || ''}`)
+        .join('\n---\n')
+
+      // Create the summarization prompt
+      const prompt = this.getSummarizationPrompt(transcript)
+
+      // Import the presenter dynamically to avoid circular dependencies
+      const { presenter } = await import('@/presenter')
+
+      // Call the LLM to generate the summary
+      const response = await presenter.llmproviderPresenter.generateText(
+        modelConfig.provider || 'ollama', // Default to ollama if no provider specified
+        prompt,
+        modelConfig.name || 'llama3.2:3b', // Default model
+        0.5, // Lower temperature for more factual summaries
+        1024 // Max tokens for summary
+      )
+
+      const summary = response.content.trim()
+      console.log(`Successfully generated summary for thread ${threadId}: ${summary.length} characters`)
+
+      // TODO: In Sprint 7.2, this summary will be embedded and stored in Pinecone
+      // await this.embedAndStoreSummary(threadId, summary, messagesToSummarize)
+
+      // Sprint 7.2: Embed and store the summary, replacing original messages
+      if (summary) {
+        try {
+          await this._embedAndStoreSummary(threadId, summary, messagesToSummarize)
+          console.log(`Successfully stored summary and replaced original messages for thread ${threadId}`)
+        } catch (storageError) {
+          console.error(`Failed to store summary for thread ${threadId}:`, storageError)
+          console.log(`Summary generation succeeded but storage failed. This batch will be retried later.`)
+          // Don't return null here - the summary was generated successfully
+          // The storage failure will be retried on the next summarization trigger
+        }
+      }
+
+      return summary
+
+    } catch (error) {
+      console.error(`Summarization failed for thread ${threadId}:`, error)
+      return null
+    }
+  }
+
+  /**
+   * Embeds a summary and stores it in Pinecone, replacing the original message vectors.
+   * Sprint 7.2: Embedding and Storing Summaries
+   *
+   * This method performs an atomic-like transaction:
+   * 1. Generate embedding for the summary
+   * 2. Upsert the summary vector to Pinecone
+   * 3. Delete the original message vectors
+   *
+   * @param threadId - The conversation thread ID
+   * @param summary - The generated summary text
+   * @param originalMessages - The original messages being replaced
+   */
+  private async _embedAndStoreSummary(
+    threadId: string,
+    summary: string,
+    originalMessages: Message[]
+  ): Promise<void> {
+    console.log(`Starting summary storage transaction for thread ${threadId}`)
+
+    // Step 1: Generate embedding for the summary
+    const summaryEmbedding = await this.ollamaService.generateEmbedding(summary, 'document')
+    if (!summaryEmbedding) {
+      throw new Error('Failed to generate embedding for the summary text')
+    }
+
+    // Step 2: Prepare the summary vector with rich metadata
+    const summaryVector = {
+      id: `summary-${uuidv4()}`,
+      values: summaryEmbedding,
+      metadata: {
+        text: summary,
+        isSummary: true,
+        originalMessageCount: originalMessages.length,
+        timestamp: new Date().toISOString(),
+        role: 'assistant' as const, // Summaries are treated as assistant messages
+        sourceMessageId: `summary-${threadId}-${Date.now()}`, // Unique identifier for the summary
+        chunkIndex: 0, // Summaries are single chunks
+        tokenCount: countSingleMessageTokens({ id: 'temp', role: 'assistant', content: summary, timestamp: new Date().toISOString() })
+      }
+    }
+
+    // Step 3: Get the IDs of the original vectors to be deleted
+    // Assumes the vector ID stored in Pinecone is the same as the message.id
+    const vectorIdsToDelete = originalMessages.map(msg => msg.id)
+
+    // Step 4: Perform the transaction: upsert first, then delete
+    try {
+      console.log(`Upserting summary vector for thread ${threadId}`)
+      await this.pineconeService.upsertVectors(threadId, [summaryVector])
+
+      console.log(`Deleting ${vectorIdsToDelete.length} original message vectors for thread ${threadId}`)
+      await this.pineconeService.deleteVectors(threadId, vectorIdsToDelete)
+
+      console.log(`Summary storage transaction completed successfully for thread ${threadId}`)
+
+    } catch (error) {
+      console.error(`Summary storage transaction failed for thread ${threadId}:`, error)
+      // Re-throw the error so the calling method can handle it
+      throw error
+    }
+  }
+
+  /**
+   * Creates the summarization prompt for the LLM.
+   * Sprint 7.1: Summarization Service
+   *
+   * @param transcript - The formatted conversation transcript
+   * @returns The complete prompt for summarization
+   */
+  // TODO: (agent) ensure it is ran in a separate thread call to the LLM
+  private getSummarizationPrompt(transcript: string): string {
+    return `You are a helpful AI assistant acting as a conversation archivist. Your task is to create a concise, third-person summary of the following conversation transcript. Focus on extracting key information, such as facts, figures, names, dates, decisions made, and important user preferences or questions. The summary will be used as a memory for another AI, so it must be accurate and dense with information.
+
+Do not add any commentary or introduction. Output only the summary.
+
+Transcript:
+---
+${transcript}
+---
+Summary:`
+  }
+
+  /**
+   * Retrieves relevant context from Pinecone based on query embedding (Legacy method)
    * This is used to find semantically similar historical messages
    *
    * @param conversationId - The conversation ID namespace to search in
@@ -373,7 +658,7 @@ export class ContextCompressionService {
    * @param topK - Number of similar chunks to retrieve (default: 5)
    * @returns Promise<string[]> - Array of relevant text chunks
    */
-  public async retrieveRelevantContext(
+  public async retrieveRelevantContextLegacy(
     conversationId: string,
     queryEmbedding: number[],
     topK: number = 5

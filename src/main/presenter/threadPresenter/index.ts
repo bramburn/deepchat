@@ -37,6 +37,7 @@ import { ContentEnricher } from './contentEnricher'
 import { CONVERSATION_EVENTS, STREAM_EVENTS, TAB_EVENTS } from '@/events'
 import { DEFAULT_SETTINGS } from './const'
 import { ContextCompressionService } from '../../services/ContextCompressionService'
+import { extractTextFromMessage } from '../../utils/textSplitter'
 
 interface GeneratingMessageState {
   message: AssistantMessage
@@ -252,6 +253,69 @@ export class ThreadPresenter implements IThreadPresenter {
         conversationId: finalMessage.conversationId,
         message: finalMessage
       })
+    }
+
+    // Sprint 7.1: Trigger background summarization after message completion
+    await this._triggerSummarization(state.conversationId)
+  }
+
+  /**
+   * Triggers background summarization for a conversation if conditions are met.
+   * Sprint 7.1: Summarization Service
+   *
+   * @param conversationId - The conversation ID to check for summarization
+   */
+  private async _triggerSummarization(conversationId: string): Promise<void> {
+    try {
+      const SUMMARY_TRIGGER_COUNT = 50 // Trigger summarization every 50 messages
+      const BATCH_SIZE = 20 // Summarize 20 messages at a time
+
+      // Get conversation and its messages
+      const conversation = await this.getConversation(conversationId)
+      const { list: allMessages } = await this.getMessages(conversationId, 1, 1000) // Get a large number to check total
+
+      // For now, we'll use a simple approach without persistent metadata
+      // In a production system, you'd store lastSummaryIndex in the conversation metadata
+      const totalMessages = allMessages.length
+
+      // Check if we have enough messages to trigger summarization
+      if (totalMessages >= SUMMARY_TRIGGER_COUNT && totalMessages % SUMMARY_TRIGGER_COUNT === 0) {
+        console.log(`Triggering background summarization for conversation ${conversationId} (${totalMessages} messages)`)
+
+        // Get the batch of messages to summarize (oldest unsummarized messages)
+        const startIndex = Math.max(0, totalMessages - SUMMARY_TRIGGER_COUNT)
+        const endIndex = startIndex + BATCH_SIZE
+        const messagesToSummarize = allMessages.slice(startIndex, endIndex)
+
+        if (messagesToSummarize.length > 0) {
+          // Create model config from conversation settings
+          const modelConfig = {
+            provider: conversation.settings.providerId,
+            name: conversation.settings.modelId,
+            maxTokens: conversation.settings.maxTokens,
+            temperature: conversation.settings.temperature
+          }
+
+          // Run summarization in the background (don't await to avoid blocking)
+          this.contextCompressionService.runSummarization(
+            conversationId,
+            messagesToSummarize,
+            modelConfig
+          ).then((summary) => {
+            if (summary) {
+              console.log(`Background summarization completed for conversation ${conversationId}`)
+              // TODO: In Sprint 7.2, embed and store this summary in Pinecone
+              // TODO: (agent) complete sprint 7.2 to embed and store the summary to pinecone
+            } else {
+              console.log(`Background summarization failed for conversation ${conversationId}`)
+            }
+          }).catch((error) => {
+            console.error(`Background summarization error for conversation ${conversationId}:`, error)
+          })
+        }
+      }
+    } catch (error) {
+      console.error(`Failed to trigger summarization for conversation ${conversationId}:`, error)
     }
   }
 
@@ -1901,6 +1965,44 @@ export class ThreadPresenter implements IThreadPresenter {
       console.log(`Using context compression strategy for conversation ${conversation.id}`)
 
       try {
+        // Sprint 5.1: Retrieve relevant context using semantic search
+        const userMessageText = extractTextFromMessage(userMessage)
+
+        if (userMessageText) {
+          const retrievedMatches = await this.contextCompressionService.retrieveRelevantContext(
+            conversation.id,
+            userMessageText
+          )
+          console.log(`Retrieved ${retrievedMatches.length} relevant context matches for conversation ${conversation.id}`)
+
+          // Sprint 6.1: Combine retrieved context with recent messages
+          const RECENT_MESSAGES_COUNT = 10
+          const recentHistory = contextMessages.slice(-RECENT_MESSAGES_COUNT).map(msg => ({
+            id: msg.id,
+            role: msg.role as 'user' | 'assistant',
+            content: extractTextFromMessage(msg) || '',
+            timestamp: msg.timestamp
+          }))
+
+          const combinedMessages = this.contextCompressionService.constructPromptContext(retrievedMatches, recentHistory)
+          console.log(`Combined context: ${combinedMessages.length} total messages for conversation ${conversation.id}`)
+
+          // Sprint 6.2: Final truncation and prompt assembly
+          const ANSWER_RESERVATION = 1024 // Reserve tokens for the model's response
+          const modelMaxTokens = modelConfig?.maxTokens || 8192 // Default to 8k if not specified
+          const effectiveMaxTokens = modelMaxTokens - ANSWER_RESERVATION
+
+          console.log(`Model max tokens: ${modelMaxTokens}, effective max (after reservation): ${effectiveMaxTokens}`)
+
+          // Truncate the combined context to fit within token limits
+          const finalMessages = this.contextCompressionService.truncatePromptContext(combinedMessages, effectiveMaxTokens)
+
+          console.log(`Final context after truncation: ${finalMessages.length} messages for conversation ${conversation.id}`)
+
+          // TODO: In future sprints, use finalMessages instead of the legacy processContext
+          // For now, we'll continue with the existing flow but log the new context for monitoring
+        }
+
         const compressedMessages = await this.contextCompressionService.processContext(
           conversation,
           contextMessages,

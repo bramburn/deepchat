@@ -177,7 +177,7 @@ export class OllamaService {
       console.log(`Testing Ollama connection and model: ${model}`)
 
       // Test with a simple embedding request
-      const testEmbedding = await this.generateEmbedding('test', false)
+      const testEmbedding = await this.generateEmbedding('test', 'document')
       
       if (testEmbedding && testEmbedding.length > 0) {
         console.log(`Ollama connection test successful. Model ${model} is working.`)

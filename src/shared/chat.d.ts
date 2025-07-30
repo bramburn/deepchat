@@ -29,6 +29,9 @@ export type Message = {
   conversationId: string
   is_variant: number
   variants?: Message[]
+  // Sprint 8.1: UI for Context Visualization
+  // Holds the text of the context chunks retrieved from Pinecone for this response
+  retrievedContext?: string[]
 }
 
 export type UserMessage = Message & {

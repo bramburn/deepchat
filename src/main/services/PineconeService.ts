@@ -136,7 +136,7 @@ export class PineconeService {
   /**
    * Queries the Pinecone index for similar vectors
    * This will be used to retrieve relevant context for conversations
-   * 
+   *
    * @param namespace - The namespace to query (typically thread ID)
    * @param queryVector - The embedding vector to find similar vectors for
    * @param topK - Number of similar vectors to return (default: 10)
@@ -165,7 +165,7 @@ export class PineconeService {
       })
 
       console.log(`Found ${queryResponse.matches?.length || 0} similar vectors`)
-      
+
       return queryResponse
     } catch (error) {
       console.error('Failed to query vectors from Pinecone:', {
@@ -173,8 +173,56 @@ export class PineconeService {
         namespace,
         topK
       })
-      
+
       throw error
+    }
+  }
+
+  /**
+   * Queries the Pinecone namespace for similar vectors and returns metadata
+   * This is the main method used for semantic search in conversations
+   *
+   * @param namespace - The namespace to query (typically thread ID)
+   * @param vector - The embedding vector to find similar vectors for
+   * @param topK - Number of similar vectors to return
+   * @returns Promise<ChatVectorMetadata[]> - Array of metadata from matching vectors
+   */
+  public async queryNamespace(
+    namespace: string,
+    vector: number[],
+    topK: number
+  ): Promise<ChatVectorMetadata[]> {
+    try {
+      await this.initialize()
+
+      if (!this.index) {
+        throw new Error('Pinecone service not initialized')
+      }
+
+      console.log(`Querying Pinecone namespace: ${namespace} for ${topK} similar vectors`)
+
+      const queryResponse = await this.index.namespace(namespace).query({
+        vector,
+        topK,
+        includeMetadata: true // Essential to get the text back
+      })
+
+      // Return the metadata from all matching vectors, filtering out null/undefined
+      const metadata = queryResponse.matches
+        .map(match => match.metadata)
+        .filter(Boolean) as ChatVectorMetadata[]
+
+      console.log(`Retrieved ${metadata.length} metadata objects from Pinecone`)
+      return metadata
+
+    } catch (error) {
+      console.error('Failed to query Pinecone namespace:', {
+        error: error instanceof Error ? error.message : String(error),
+        namespace,
+        topK
+      })
+
+      return [] // Return an empty array on failure to prevent crashes
     }
   }
 
@@ -286,6 +334,40 @@ export class PineconeService {
       if (!vector.metadata || !vector.metadata.text || !vector.metadata.sourceMessageId) {
         throw new Error('Vector must have valid metadata with text and sourceMessageId')
       }
+    }
+  }
+
+  /**
+   * Deletes a list of vectors from a namespace by their IDs.
+   * Sprint 7.2: Embedding and Storing Summaries
+   *
+   * @param namespace The namespace to operate in
+   * @param ids An array of vector IDs to delete
+   */
+  public async deleteVectors(namespace: string, ids: string[]): Promise<void> {
+    if (ids.length === 0) {
+      console.log('No vector IDs provided for deletion, skipping')
+      return
+    }
+
+    try {
+      await this.initialize()
+      if (!this.index) {
+        throw new Error('Pinecone service not initialized')
+      }
+
+      console.log(`Deleting ${ids.length} vectors from Pinecone namespace: ${namespace}`)
+      await this.index.namespace(namespace).deleteMany(ids)
+      console.log(`Successfully deleted ${ids.length} vectors from Pinecone`)
+
+    } catch (error) {
+      console.error('Failed to delete vectors from Pinecone:', {
+        error: error instanceof Error ? error.message : String(error),
+        namespace,
+        count: ids.length
+      })
+      // Re-throw so the calling transaction can handle the failure
+      throw error
     }
   }
 }
