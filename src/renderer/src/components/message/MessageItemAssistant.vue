@@ -87,6 +87,21 @@
         @next="handleAction('next')"
         @fork="handleAction('fork')"
       />
+
+      <!-- Sprint 8.1: Context Viewer Icon -->
+      <div
+        v-if="currentMessage.retrievedContext && currentMessage.retrievedContext.length > 0"
+        class="flex justify-end mt-2"
+      >
+        <button
+          @click="showContextViewer = true"
+          class="inline-flex items-center gap-1 px-2 py-1 text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
+          title="View retrieved context"
+        >
+          <Icon icon="lucide:brain-circuit" class="w-3 h-3" />
+          <span>Context ({{ currentMessage.retrievedContext.length }})</span>
+        </button>
+      </div>
     </div>
   </div>
 
@@ -109,6 +124,15 @@
       </DialogFooter>
     </DialogContent>
   </Dialog>
+
+  <!-- Sprint 8.1: Context Viewer Modal -->
+  <teleport to="body">
+    <ContextViewer
+      v-if="showContextViewer"
+      :context="currentMessage.retrievedContext || []"
+      @close="showContextViewer = false"
+    />
+  </teleport>
 </template>
 
 <script setup lang="ts">
@@ -129,6 +153,7 @@ import { Icon } from '@iconify/vue'
 import MessageBlockAction from './MessageBlockAction.vue'
 import { useI18n } from 'vue-i18n'
 import MessageBlockImage from './MessageBlockImage.vue'
+import ContextViewer from '@/components/ContextViewer.vue'
 
 import {
   Dialog,
@@ -149,6 +174,7 @@ const themeStore = useThemeStore()
 const chatStore = useChatStore()
 const settingsStore = useSettingsStore()
 const currentVariantIndex = ref(0)
+const showContextViewer = ref(false) // Sprint 8.1: Context Viewer state
 const { t } = useI18n()
 
 // 定义事件

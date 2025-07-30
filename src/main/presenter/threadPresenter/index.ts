@@ -56,6 +56,8 @@ interface GeneratingMessageState {
     total_tokens: number
     context_length: number
   }
+  // Sprint 8.2: Store retrieved context for UI visualization
+  retrievedContext?: string[]
 }
 
 export class ThreadPresenter implements IThreadPresenter {
@@ -249,9 +251,16 @@ export class ThreadPresenter implements IThreadPresenter {
     // 广播消息生成完成事件
     const finalMessage = await this.messageManager.getMessage(eventId)
     if (finalMessage) {
+      // Sprint 8.2: Attach retrieved context to the message for UI visualization
+      const messageWithContext = { ...finalMessage }
+      if (state.retrievedContext && state.retrievedContext.length > 0) {
+        messageWithContext.retrievedContext = state.retrievedContext
+        console.log(`Attaching ${state.retrievedContext.length} context strings to message ${eventId}`)
+      }
+
       eventBus.sendToMain(CONVERSATION_EVENTS.MESSAGE_GENERATED, {
         conversationId: finalMessage.conversationId,
-        message: finalMessage
+        message: messageWithContext
       })
     }
 
@@ -1998,6 +2007,21 @@ export class ThreadPresenter implements IThreadPresenter {
           const finalMessages = this.contextCompressionService.truncatePromptContext(combinedMessages, effectiveMaxTokens)
 
           console.log(`Final context after truncation: ${finalMessages.length} messages for conversation ${conversation.id}`)
+
+          // Sprint 8.2: Store context strings for UI visualization
+          // Extract the text content from final messages to show in the UI
+          const contextStrings = finalMessages.map(msg => msg.content)
+          console.log(`Storing ${contextStrings.length} context strings for UI visualization`)
+
+          // Store the context in the generating message state for later attachment
+          // We need to find the current generating message for this conversation
+          const generatingMessage = Array.from(this.generatingMessages.values())
+            .find(state => state.conversationId === conversation.id)
+
+          if (generatingMessage) {
+            generatingMessage.retrievedContext = contextStrings
+            console.log(`Attached context to generating message ${generatingMessage.message.id}`)
+          }
 
           // TODO: In future sprints, use finalMessages instead of the legacy processContext
           // For now, we'll continue with the existing flow but log the new context for monitoring
