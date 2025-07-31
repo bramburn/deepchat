@@ -65,6 +65,7 @@ export class OllamaService {
       const prompt = `${prefix} ${text.trim()}`
 
       console.log(`Generating embedding for text (${text.length} chars) using model: ${model}`)
+      console.log(`Using prompt: "${prompt.substring(0, 100)}${prompt.length > 100 ? '...' : ''}"`)
 
       // Make the API request to Ollama
       const controller = new AbortController()
@@ -101,9 +102,20 @@ export class OllamaService {
 
       // Parse the response
       const data = await response.json() as OllamaEmbeddingResponse
-      
+
+      // Debug: Log the actual response structure
+      console.log('Ollama embedding response structure:', {
+        hasEmbedding: !!data.embedding,
+        embeddingType: typeof data.embedding,
+        isArray: Array.isArray(data.embedding),
+        embeddingLength: data.embedding ? data.embedding.length : 0,
+        responseKeys: Object.keys(data),
+        model: data.model
+      })
+
       // Validate the response structure
       if (!data.embedding || !Array.isArray(data.embedding)) {
+        console.error('Invalid Ollama response:', JSON.stringify(data, null, 2))
         throw new Error('Invalid response format: missing or invalid embedding array')
       }
 

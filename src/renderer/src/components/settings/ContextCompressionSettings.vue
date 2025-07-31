@@ -23,6 +23,9 @@
             :placeholder="t('settings.contextCompression.pineconeApiKeyPlaceholder')"
             class="w-full"
           />
+          <p class="text-xs text-muted-foreground">
+            API key is encrypted and stored securely. The dots (••••) indicate a saved key.
+          </p>
         </div>
 
         <!-- Pinecone Environment -->
@@ -134,8 +137,10 @@ import { useI18n } from 'vue-i18n'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Icon } from '@iconify/vue'
+import { useSettingsStore } from '@/stores/settings'
 
 const { t } = useI18n()
+const settingsStore = useSettingsStore()
 
 // Reactive state
 const compressionSettings = ref({
@@ -173,7 +178,8 @@ const handleSave = async () => {
   if (isSaving.value) return
 
   // Basic validation
-  if (!compressionSettings.value.pineconeApiKey.trim()) {
+  const isPlaceholder = compressionSettings.value.pineconeApiKey === '••••••••••••••••••••••••••••••••'
+  if (!compressionSettings.value.pineconeApiKey.trim() || (!isPlaceholder && compressionSettings.value.pineconeApiKey.trim().length === 0)) {
     statusMessage.value = t('settings.contextCompression.errors.pineconeApiKeyRequired')
     statusType.value = 'error'
     return
@@ -225,6 +231,9 @@ const handleSave = async () => {
       statusType.value = 'success'
       // Replace API key with placeholder to show it's been saved
       compressionSettings.value.pineconeApiKey = '••••••••••••••••••••••••••••••••'
+
+      // Update the settings store so other components know compression is configured
+      await settingsStore.loadContextCompressionSettings()
     } else {
       console.error('Frontend: Backend returned error:', result.error)
       statusMessage.value = result.error || t('settings.contextCompression.saveError')
@@ -249,7 +258,8 @@ const handleTest = async () => {
   if (isSaving.value) return
 
   // Basic validation
-  if (!compressionSettings.value.pineconeApiKey.trim()) {
+  const isPlaceholderForTest = compressionSettings.value.pineconeApiKey === '••••••••••••••••••••••••••••••••'
+  if (!compressionSettings.value.pineconeApiKey.trim() || (!isPlaceholderForTest && compressionSettings.value.pineconeApiKey.trim().length === 0)) {
     statusMessage.value = 'Pinecone API key is required for testing'
     statusType.value = 'error'
     return

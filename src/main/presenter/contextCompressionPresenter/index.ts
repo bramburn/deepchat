@@ -71,7 +71,21 @@ export class ContextCompressionPresenter {
     try {
       // 1. Validate input
       console.log('ContextCompressionPresenter: Step 1 - Validating input')
-      if (!settings.pineconeApiKey?.trim()) {
+
+      // Check if the API key is a placeholder (indicating existing key should be used)
+      const isPlaceholder = settings.pineconeApiKey === '••••••••••••••••••••••••••••••••'
+      let apiKeyToUse = settings.pineconeApiKey
+
+      if (isPlaceholder) {
+        // Use existing saved API key
+        const existingKey = ContextCompressionPresenter.getDecryptedApiKey()
+        if (!existingKey) {
+          console.log('ContextCompressionPresenter: Validation failed - No existing API key found')
+          return { success: false, error: 'No existing API key found. Please enter a valid API key.' }
+        }
+        apiKeyToUse = existingKey
+        console.log('ContextCompressionPresenter: Using existing saved API key')
+      } else if (!settings.pineconeApiKey?.trim()) {
         console.log('ContextCompressionPresenter: Validation failed - Pinecone API key missing')
         return { success: false, error: 'Pinecone API key is required' }
       }
@@ -99,7 +113,7 @@ export class ContextCompressionPresenter {
 
       // 3. Validate Pinecone credentials
       console.log('ContextCompressionPresenter: Step 3 - Validating Pinecone credentials')
-      const pineconeCheck = await this.validatePinecone(settings.pineconeApiKey, settings.pineconeEnv)
+      const pineconeCheck = await this.validatePinecone(apiKeyToUse, settings.pineconeEnv)
       if (!pineconeCheck.success) {
         console.log('ContextCompressionPresenter: Pinecone validation failed:', pineconeCheck.error)
         return pineconeCheck
@@ -113,12 +127,23 @@ export class ContextCompressionPresenter {
         return { success: false, error: 'Encryption is not available on this system' }
       }
 
-      const encryptedApiKey = safeStorage.encryptString(settings.pineconeApiKey)
+      // Only encrypt and save the API key if it's not a placeholder
+      let encryptedApiKeyBase64: string
+      if (isPlaceholder) {
+        // Keep the existing encrypted key
+        const existingSettings = store.get('settings')
+        encryptedApiKeyBase64 = existingSettings.pineconeApiKeyEncrypted || ''
+      } else {
+        // Encrypt the new API key
+        const encryptedApiKey = safeStorage.encryptString(apiKeyToUse)
+        encryptedApiKeyBase64 = encryptedApiKey.toString('base64')
+      }
+
       store.set('settings', {
         pineconeEnv: settings.pineconeEnv,
         pineconeIndexName: settings.pineconeIndexName,
         ollamaModel: settings.ollamaModel,
-        pineconeApiKeyEncrypted: encryptedApiKey.toString('base64')
+        pineconeApiKeyEncrypted: encryptedApiKeyBase64
       })
 
       console.log('ContextCompressionPresenter: Settings saved successfully')
@@ -338,6 +363,18 @@ export class ContextCompressionPresenter {
     console.log('ContextCompressionPresenter: Testing connection with settings')
 
     try {
+      // Handle placeholder API key for testing
+      const isPlaceholder = settings.pineconeApiKey === '••••••••••••••••••••••••••••••••'
+      let apiKeyToTest = settings.pineconeApiKey
+
+      if (isPlaceholder) {
+        const existingKey = ContextCompressionPresenter.getDecryptedApiKey()
+        if (!existingKey) {
+          return { success: false, error: 'No existing API key found. Please enter a valid API key.' }
+        }
+        apiKeyToTest = existingKey
+      }
+
       // Test Ollama first
       console.log('Testing Ollama connection...')
       const ollamaResult = await this.validateOllamaModel(settings.ollamaModel)
@@ -347,7 +384,7 @@ export class ContextCompressionPresenter {
 
       // Test Pinecone
       console.log('Testing Pinecone connection...')
-      const pineconeResult = await this.validatePinecone(settings.pineconeApiKey, settings.pineconeEnv)
+      const pineconeResult = await this.validatePinecone(apiKeyToTest, settings.pineconeEnv)
       if (!pineconeResult.success) {
         return { success: false, error: `Pinecone: ${pineconeResult.error}` }
       }

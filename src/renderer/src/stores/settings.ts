@@ -51,11 +51,15 @@ export const useSettingsStore = defineStore('settings', () => {
     pineconeEnv?: string
     pineconeIndexName?: string
     ollamaModel?: string
+    hasApiKey?: boolean
   }>({})
 
   // Check if context compression is properly configured
   const isCompressionConfigured = computed(() => {
-    return !!(contextCompressionSettings.value.pineconeEnv && contextCompressionSettings.value.pineconeIndexName && contextCompressionSettings.value.ollamaModel)
+    return !!(contextCompressionSettings.value.pineconeEnv &&
+             contextCompressionSettings.value.pineconeIndexName &&
+             contextCompressionSettings.value.ollamaModel &&
+             contextCompressionSettings.value.hasApiKey)
   })
 
   // 模型匹配字符串数组，按优先级排序
