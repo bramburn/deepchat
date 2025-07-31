@@ -11,11 +11,23 @@ declare global {
       getWebContentsId(): number
       getContextCompressionSettings(): Promise<{
         pineconeEnv?: string
+        pineconeIndexName?: string
         ollamaModel?: string
+        hasApiKey: boolean
       }>
       saveContextCompressionSettings(settings: {
         pineconeApiKey: string
         pineconeEnv: string
+        pineconeIndexName: string
+        ollamaModel: string
+      }): Promise<{
+        success: boolean
+        error?: string
+      }>
+      testContextCompressionConnection(settings: {
+        pineconeApiKey: string
+        pineconeEnv: string
+        pineconeIndexName: string
         ollamaModel: string
       }): Promise<{
         success: boolean

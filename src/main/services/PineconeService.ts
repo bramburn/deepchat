@@ -30,7 +30,13 @@ export class PineconeService {
   private static instance: PineconeService
   private pinecone: Pinecone | null = null
   private index: Index<ChatVectorMetadata> | null = null
-  private readonly indexName = 'deepchat-context-history'
+
+  /**
+   * Get the configured index name from settings
+   */
+  private getIndexName(): string {
+    return ContextCompressionPresenter.getPineconeIndexName() || 'deepchat-context-history'
+  }
 
   /**
    * Singleton pattern to ensure only one Pinecone client is active
@@ -77,10 +83,11 @@ export class PineconeService {
         apiKey
       })
 
-      // Get index reference
-      this.index = this.pinecone.index<ChatVectorMetadata>(this.indexName)
-      
-      console.log(`Pinecone client initialized successfully for index: ${this.indexName}`)
+      // Get index reference using configured index name
+      const indexName = this.getIndexName()
+      this.index = this.pinecone.index<ChatVectorMetadata>(indexName)
+
+      console.log(`Pinecone client initialized successfully for index: ${indexName}`)
     } catch (error) {
       console.error('Failed to initialize Pinecone client:', error)
       throw error

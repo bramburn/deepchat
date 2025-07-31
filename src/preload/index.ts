@@ -38,6 +38,9 @@ const api = {
   saveContextCompressionSettings: (settings: any) => {
     return ipcRenderer.invoke('save-context-compression-settings', settings)
   },
+  testContextCompressionConnection: (settings: any) => {
+    return ipcRenderer.invoke('test-context-compression-connection', settings)
+  },
   // Thread Deletion Notification
   notifyThreadDeleted: (threadId: string) => {
     return ipcRenderer.send('thread-deleted', threadId)

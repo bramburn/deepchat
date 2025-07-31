@@ -49,12 +49,13 @@ export const useSettingsStore = defineStore('settings', () => {
   // Context compression settings
   const contextCompressionSettings = ref<{
     pineconeEnv?: string
+    pineconeIndexName?: string
     ollamaModel?: string
   }>({})
 
   // Check if context compression is properly configured
   const isCompressionConfigured = computed(() => {
-    return !!(contextCompressionSettings.value.pineconeEnv && contextCompressionSettings.value.ollamaModel)
+    return !!(contextCompressionSettings.value.pineconeEnv && contextCompressionSettings.value.pineconeIndexName && contextCompressionSettings.value.ollamaModel)
   })
 
   // 模型匹配字符串数组，按优先级排序
